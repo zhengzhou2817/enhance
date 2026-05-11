@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>贪吃蛇 Snake Game</title>
+  <meta name="description" content="一个美观、响应式、无依赖的原生 JavaScript 贪吃蛇小游戏。">
+  <link rel="stylesheet" href="src/css/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero-panel" aria-labelledby="game-title">
+      <div class="title-block">
+        <p class="eyebrow">HTML · CSS · JavaScript</p>
+        <h1 id="game-title">贪吃蛇</h1>
+        <p class="subtitle">吃掉能量核心，避开墙壁和自己。支持键盘、WASD 和移动端按钮。</p>
+      </div>
+
+      <div class="stats-grid" aria-label="游戏状态">
+        <article class="stat-card"><span>分数</span><strong id="score">0</strong></article>
+        <article class="stat-card"><span>最高分</span><strong id="best-score">0</strong></article>
+        <article class="stat-card"><span>速度</span><strong id="speed-label">标准</strong></article>
+      </div>
+
+      <div class="controls-panel">
+        <button class="primary-button" id="start-button" type="button">开始游戏</button>
+        <button class="ghost-button" id="restart-button" type="button">重新开始</button>
+        <label class="difficulty-select">
+          <span>难度</span>
+          <select id="difficulty" aria-label="选择难度">
+            <option value="easy">轻松</option>
+            <option value="normal" selected>标准</option>
+            <option value="hard">极速</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="instruction-card">
+        <h2>操作</h2>
+        <p>方向键 / WASD 控制移动，空格键开始或暂停。</p>
+        <p>手机端可使用下方虚拟方向键。</p>
+      </div>
+    </section>
+
+    <section class="game-panel" aria-label="贪吃蛇游戏区域">
+      <div class="canvas-frame">
+        <canvas id="game-board" width="600" height="600" aria-label="游戏画布"></canvas>
+        <div class="overlay" id="overlay">
+          <p id="overlay-title">准备开始</p>
+          <span id="overlay-text">点击开始游戏或按空格键</span>
+        </div>
+      </div>
+
+      <div class="mobile-pad" aria-label="移动端方向控制">
+        <button data-direction="up" aria-label="向上">▲</button>
+        <div>
+          <button data-direction="left" aria-label="向左">◀</button>
+          <button data-direction="down" aria-label="向下">▼</button>
+          <button data-direction="right" aria-label="向右">▶</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="src/js/config.js"></script>
+  <script src="src/js/game.js"></script>
+  <script src="src/js/ui.js"></script>
+  <script src="src/js/main.js"></script>
+</body>
+</html>
