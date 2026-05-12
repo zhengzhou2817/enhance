@@ -1,0 +1,531 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function interp(points, u) {
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i + 1];
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    segs.push({ x1, y1, x2, y2, len });
+    total += len;
+  }
+  let d = ((u % 1) + 1) % 1 * total;
+  for (const s of segs) {
+    if (d <= s.len) {
+      const k = s.len === 0 ? 0 : d / s.len;
+      return [s.x1 + (s.x2 - s.x1) * k, s.y1 + (s.y2 - s.y1) * k];
+    }
+    d -= s.len;
+  }
+  return points[points.length - 1];
+}
+
+function MovingDots({ points, active, t, color = "#f97316", count = 7, reverse = false }) {
+  return (
+    <g opacity={active ? 1 : 0.12}>
+      {Array.from({ length: count }).map((_, i) => {
+        const base = (t * 1.35 + i / count) % 1;
+        const u = reverse ? 1 - base : base;
+        const [cx, cy] = interp(points, u);
+        return <circle key={i} cx={cx} cy={cy} r={4.5} fill={color} />;
+      })}
+    </g>
+  );
+}
+
+function Coil({ x1, x2, y, label, active }) {
+  const n = 5;
+  const w = (x2 - x1) / n;
+  let d = `M ${x1} ${y}`;
+  for (let i = 0; i < n; i++) {
+    const xa = x1 + i * w;
+    const xm = xa + w / 2;
+    const xb = xa + w;
+    d += ` C ${xa + w * 0.15} ${y - 28}, ${xm - w * 0.15} ${y - 28}, ${xm} ${y}`;
+    d += ` C ${xm + w * 0.15} ${y + 28}, ${xb - w * 0.15} ${y + 28}, ${xb} ${y}`;
+  }
+  return (
+    <g>
+      <path d={d} fill="none" stroke={active ? "#f97316" : "#334155"} strokeWidth="5" strokeLinecap="round" />
+      <text x={(x1 + x2) / 2} y={y - 42} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">{label}</text>
+    </g>
+  );
+}
+
+function Capacitor({ x, y, label, active, note }) {
+  return (
+    <g>
+      <line x1={x - 9} y1={y - 32} x2={x - 9} y2={y + 32} stroke={active ? "#06b6d4" : "#334155"} strokeWidth="5" strokeLinecap="round" />
+      <line x1={x + 9} y1={y - 32} x2={x + 9} y2={y + 32} stroke={active ? "#06b6d4" : "#334155"} strokeWidth="5" strokeLinecap="round" />
+      <text x={x} y={y - 48} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">{label}</text>
+      {note && <text x={x} y={y + 56} textAnchor="middle" className="fill-slate-500 text-xs">{note}</text>}
+    </g>
+  );
+}
+
+function Battery({ x, y }) {
+  return (
+    <g>
+      <line x1={x} y1={y - 38} x2={x} y2={y - 10} stroke="#334155" strokeWidth="4" />
+      <line x1={x + 18} y1={y - 28} x2={x + 18} y2={y - 20} stroke="#334155" strokeWidth="4" />
+      <line x1={x + 9} y1={y - 10} x2={x + 9} y2={y + 44} stroke="#334155" strokeWidth="3" />
+      <text x={x - 6} y={y - 44} className="fill-slate-700 text-lg font-bold">+</text>
+      <text x={x + 23} y={y - 8} className="fill-slate-700 text-lg font-bold">−</text>
+      <text x={x + 9} y={y + 70} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">Vin</text>
+    </g>
+  );
+}
+
+function Ground({ x, y }) {
+  return (
+    <g stroke="#334155" strokeWidth="3" strokeLinecap="round">
+      <line x1={x - 16} y1={y} x2={x + 16} y2={y} />
+      <line x1={x - 11} y1={y + 8} x2={x + 11} y2={y + 8} />
+      <line x1={x - 6} y1={y + 16} x2={x + 6} y2={y + 16} />
+    </g>
+  );
+}
+
+function Diode({ x, yTop, yBot, active }) {
+  const stroke = active ? "#22c55e" : "#334155";
+  return (
+    <g>
+      <line x1={x} y1={yBot} x2={x} y2={yTop + 62} stroke="#334155" strokeWidth="4" />
+      <line x1={x} y1={yTop} x2={x} y2={yTop + 18} stroke="#334155" strokeWidth="4" />
+      <polygon points={`${x - 18},${yTop + 62} ${x + 18},${yTop + 62} ${x},${yTop + 25}`} fill="white" stroke={stroke} strokeWidth="4" />
+      <line x1={x - 20} y1={yTop + 22} x2={x + 20} y2={yTop + 22} stroke={stroke} strokeWidth="4" />
+      <text x={x + 32} y={(yTop + yBot) / 2} className="fill-slate-700 text-sm font-semibold">D</text>
+    </g>
+  );
+}
+
+function MosSwitch({ x, yTop, yBot, on }) {
+  return (
+    <g>
+      <line x1={x} y1={yTop} x2={x} y2={yTop + 26} stroke="#334155" strokeWidth="4" strokeLinecap="round" />
+      <line x1={x} y1={yBot - 28} x2={x} y2={yBot} stroke="#334155" strokeWidth="4" strokeLinecap="round" />
+      <line
+        x1={x}
+        y1={yTop + 29}
+        x2={on ? x : x + 42}
+        y2={on ? yBot - 31 : yBot - 58}
+        stroke={on ? "#22c55e" : "#ef4444"}
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <text x={x - 42} y={(yTop + yBot) / 2} className="fill-slate-700 text-sm font-semibold">S</text>
+    </g>
+  );
+}
+
+function Load({ x, yTop, yBot }) {
+  const mid = x;
+  const d = [
+    `M ${mid} ${yTop}`,
+    `L ${mid - 16} ${yTop + 15}`,
+    `L ${mid + 16} ${yTop + 30}`,
+    `L ${mid - 16} ${yTop + 45}`,
+    `L ${mid + 16} ${yTop + 60}`,
+    `L ${mid - 16} ${yTop + 75}`,
+    `L ${mid} ${yTop + 90}`,
+    `L ${mid} ${yBot}`,
+  ].join(" ");
+  return (
+    <g>
+      <path d={d} fill="none" stroke="#334155" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <text x={x + 33} y={(yTop + yBot) / 2} className="fill-slate-700 text-sm font-semibold">Rload</text>
+    </g>
+  );
+}
+
+function Waveform({ title, phase, duty, value, kind }) {
+  const W = 330, H = 82, pad = 14;
+  const pts = [];
+  for (let i = 0; i <= 120; i++) {
+    const p = i / 120;
+    const on = p < duty;
+    let yNorm;
+    if (kind === "il1") yNorm = on ? 0.75 - 0.42 * (p / duty) : 0.33 + 0.42 * ((p - duty) / (1 - duty));
+    else if (kind === "il2") yNorm = on ? 0.68 - 0.30 * (p / duty) : 0.38 + 0.30 * ((p - duty) / (1 - duty));
+    else if (kind === "vc") yNorm = on ? 0.50 + 0.06 * (p / duty) : 0.56 - 0.06 * ((p - duty) / (1 - duty));
+    else yNorm = 0.52 + 0.02 * Math.sin(2 * Math.PI * p);
+    pts.push(`${pad + p * (W - 2 * pad)},${pad + yNorm * (H - 2 * pad)}`);
+  }
+  const xNow = pad + phase * (W - 2 * pad);
+  return (
+    <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-700">{title}</div>
+        <div className="text-xs text-slate-500">{value}</div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 h-20 w-full">
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="#cbd5e1" strokeWidth="1" />
+        <rect x={pad} y={pad} width={(W - 2 * pad) * duty} height={H - 2 * pad} fill="#dcfce7" opacity="0.55" />
+        <rect x={pad + (W - 2 * pad) * duty} y={pad} width={(W - 2 * pad) * (1 - duty)} height={H - 2 * pad} fill="#fee2e2" opacity="0.45" />
+        <polyline points={pts.join(" ")} fill="none" stroke="#0f172a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        <line x1={xNow} y1={pad - 3} x2={xNow} y2={H - pad + 3} stroke="#f97316" strokeWidth="2" />
+        <text x={pad + 6} y={H - 4} className="fill-slate-500 text-[10px]">ON</text>
+        <text x={pad + (W - 2 * pad) * duty + 6} y={H - 4} className="fill-slate-500 text-[10px]">OFF</text>
+      </svg>
+    </div>
+  );
+}
+
+function PWMPanel({ phase, duty, vin, vout, on }) {
+  const W = 760;
+  const H = 380;
+  const padL = 86;
+  const padR = 34;
+  const plotW = W - padL - padR;
+  const vc = vin / (1 - duty);
+  const rows = [
+    { key: "cmp", y: 32, label: "PWM比较", sub: "载波 ramp 与控制量 Vctrl" },
+    { key: "gate", y: 105, label: "S gate", sub: "MOSFET门极驱动" },
+    { key: "diode", y: 165, label: "D导通", sub: "理想互补导通" },
+    { key: "sw", y: 225, label: "vSW(A)", sub: "开关节点A电压" },
+    { key: "slope", y: 285, label: "电感斜率", sub: "di/dt由电感电压决定" },
+  ];
+  const x = (p) => padL + p * plotW;
+  const yAnalog = (rowY, v) => rowY + 48 - v * 40;
+  const yDigital = (rowY, high) => rowY + (high ? 10 : 42);
+  const cursorX = x(phase);
+  const transX = x(duty);
+  const carrierPts = Array.from({ length: 161 }).map((_, i) => {
+    const p = i / 160;
+    return `${x(p)},${yAnalog(rows[0].y, p)}`;
+  }).join(" ");
+  const squarePts = (rowY, highFirst = true) => {
+    const a = highFirst ? yDigital(rowY, true) : yDigital(rowY, false);
+    const b = highFirst ? yDigital(rowY, false) : yDigital(rowY, true);
+    return `${x(0)},${a} ${x(duty)},${a} ${x(duty)},${b} ${x(1)},${b}`;
+  };
+  const slopePts = `${x(0)},${yDigital(rows[4].y, false)} ${x(duty)},${yDigital(rows[4].y, true)} ${x(1)},${yDigital(rows[4].y, false)}`;
+  const vL1Off = -vin * duty / (1 - duty);
+
+  return (
+    <section className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">PWM 生成、门极驱动与功率级波形对齐</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            这里把控制器输出、PWM比较器、MOS gate、二极管导通和开关节点放在同一时间轴上。竖线就是上方主电路动画的当前时刻。
+          </p>
+        </div>
+        <div className={`rounded-2xl px-4 py-3 text-sm font-semibold ${on ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+          {on ? "ramp < Vctrl → S导通" : "ramp ≥ Vctrl → S关断"}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-2xl bg-slate-50 ring-1 ring-slate-200">
+          <rect x={x(0)} y="18" width={plotW * duty} height="332" rx="14" fill="#dcfce7" opacity="0.48" />
+          <rect x={x(duty)} y="18" width={plotW * (1 - duty)} height="332" rx="14" fill="#fee2e2" opacity="0.42" />
+          <line x1={transX} y1="18" x2={transX} y2="350" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 5" />
+          <line x1={cursorX} y1="14" x2={cursorX} y2="356" stroke="#f97316" strokeWidth="3" />
+
+          {rows.map((r) => (
+            <g key={r.key}>
+              <line x1={padL} y1={r.y + 48} x2={W - padR} y2={r.y + 48} stroke="#cbd5e1" strokeWidth="1" />
+              <text x="18" y={r.y + 20} className="fill-slate-800 text-sm font-bold">{r.label}</text>
+              <text x="18" y={r.y + 40} className="fill-slate-500 text-[11px]">{r.sub}</text>
+            </g>
+          ))}
+
+          <polyline points={carrierPts} fill="none" stroke="#0f172a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+          <line x1={x(0)} y1={yAnalog(rows[0].y, duty)} x2={x(1)} y2={yAnalog(rows[0].y, duty)} stroke="#0ea5e9" strokeWidth="3" strokeLinecap="round" />
+          <text x={x(0.03)} y={yAnalog(rows[0].y, duty) - 7} className="fill-sky-700 text-xs font-semibold">Vctrl = D · Vramp_pk</text>
+          <text x={x(0.67)} y={rows[0].y + 16} className="fill-slate-600 text-xs">ramp从0线性爬升</text>
+
+          <polyline points={squarePts(rows[1].y, true)} fill="none" stroke="#22c55e" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={squarePts(rows[2].y, false)} fill="none" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={squarePts(rows[3].y, false)} fill="none" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={slopePts} fill="none" stroke="#f97316" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+
+          <text x={x(duty / 2)} y="370" textAnchor="middle" className="fill-emerald-700 text-xs font-bold">ON = D·T</text>
+          <text x={x(duty + (1 - duty) / 2)} y="370" textAnchor="middle" className="fill-rose-700 text-xs font-bold">OFF = (1−D)·T</text>
+          <text x={x(duty) + 8} y="30" className="fill-slate-500 text-xs">比较器翻转点</text>
+
+          <text x={x(0.03)} y={rows[1].y + 21} className="fill-emerald-700 text-xs font-semibold">HIGH：S闭合</text>
+          <text x={x(Math.min(0.95, duty + 0.04))} y={rows[1].y + 51} className="fill-rose-700 text-xs font-semibold">LOW：S断开</text>
+          <text x={x(0.03)} y={rows[2].y + 51} className="fill-slate-600 text-xs">D截止</text>
+          <text x={x(Math.min(0.95, duty + 0.04))} y={rows[2].y + 21} className="fill-rose-700 text-xs font-semibold">D导通</text>
+          <text x={x(0.03)} y={rows[3].y + 51} className="fill-indigo-700 text-xs font-semibold">A≈0V</text>
+          <text x={x(Math.min(0.95, duty + 0.04))} y={rows[3].y + 21} className="fill-indigo-700 text-xs font-semibold">A≈VCx≈{vc.toFixed(1)}V</text>
+          <text x={x(0.03)} y={rows[4].y + 51} className="fill-orange-700 text-xs font-semibold">vL1≈+Vin，iL1上升</text>
+          <text x={x(Math.min(0.95, duty + 0.04))} y={rows[4].y + 21} className="fill-orange-700 text-xs font-semibold">vL1≈{vL1Off.toFixed(1)}V，iL1下降</text>
+        </svg>
+
+        <div className="space-y-3 text-sm leading-6 text-slate-700">
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="font-bold text-slate-900">1. PWM不是直接改变电压幅值</div>
+            <div className="mt-1">PWM先改变的是<b>开关导通时间比例</b>：D越大，S导通窗口越长，OFF窗口越短。</div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="font-bold text-slate-900">2. 功率级把时间占比变成平均电压</div>
+            <div className="mt-1">Cuk在CCM下满足伏秒平衡，因此平均输出满足 Vout = −D/(1−D)·Vin。当前约 {vout.toFixed(1)} V。</div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="font-bold text-slate-900">3. 电感看到的是分段电压</div>
+            <div className="mt-1">ON段斜率约 +Vin/L1；OFF段斜率约 −D·Vin/[(1−D)L1]。斜率不同，但一个周期平均电感电压为0。</div>
+          </div>
+          <div className="rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200">
+            <div className="font-bold text-amber-900">实际工程修正</div>
+            <div className="mt-1">真实驱动还要加死区、传播延迟、门极电荷、二极管反恢复或同步管体二极管导通时间；此处先按理想互补PWM解释主逻辑。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ConversionStep({ n, title, body, active }) {
+  return (
+    <div className={`rounded-2xl border p-4 shadow-sm transition ${active ? "border-orange-300 bg-orange-50" : "border-slate-200 bg-white"}`}>
+      <div className="mb-1 flex items-center gap-2">
+        <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${active ? "bg-orange-500 text-white" : "bg-slate-200 text-slate-700"}`}>{n}</div>
+        <div className="font-semibold text-slate-800">{title}</div>
+      </div>
+      <div className="text-sm leading-6 text-slate-600">{body}</div>
+    </div>
+  );
+}
+
+export default function CukConverterAnimation() {
+  const [duty, setDuty] = useState(0.5);
+  const [vin, setVin] = useState(12);
+  const [playing, setPlaying] = useState(true);
+  const [speed, setSpeed] = useState(0.42);
+  const [t, setT] = useState(0);
+  const raf = useRef(null);
+  const last = useRef(null);
+
+  useEffect(() => {
+    const step = (now) => {
+      if (last.current == null) last.current = now;
+      const dt = (now - last.current) / 1000;
+      last.current = now;
+      if (playing) setT((v) => (v + dt * speed) % 1000);
+      raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [playing, speed]);
+
+  const phase = t % 1;
+  const on = phase < duty;
+  const absVout = (vin * duty) / (1 - duty);
+  const vout = -absVout;
+  const vc = vin / (1 - duty);
+
+  const iL1 = on ? 0.46 + 0.30 * (phase / duty) : 0.76 - 0.30 * ((phase - duty) / (1 - duty));
+  const iL2 = on ? 0.50 + 0.22 * (phase / duty) : 0.72 - 0.22 * ((phase - duty) / (1 - duty));
+
+  const paths = useMemo(() => ({
+    l1On: [[60, 240], [120, 240], [255, 240], [300, 240], [300, 330]],
+    capOutOn: [[382, 240], [455, 240], [520, 240], [605, 240], [635, 240], [635, 330]],
+    l1OffCap: [[60, 240], [120, 240], [255, 240], [337, 240], [382, 240], [455, 240], [455, 330]],
+    l2Off: [[455, 330], [455, 240], [520, 240], [605, 240], [635, 240], [635, 330]],
+    loadReturn: [[635, 330], [520, 330], [455, 330]],
+  }), []);
+
+  const setPhase = (p) => {
+    setPlaying(false);
+    setT(Math.floor(t) + clamp(p, 0, 0.999));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-5 text-slate-900">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <header className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950">Cuk 变换器：PWM、能量换手与负输出的动态动画</h1>
+              <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+                模型假设：理想器件、非隔离反相 Cuk、连续电感电流 CCM。动画重点不是器件封装，而是能量包在 L1、耦合电容 Cx、L2、Cout/负载之间的换手过程。
+              </p>
+            </div>
+            <div className={`rounded-2xl px-4 py-3 text-sm font-semibold ${on ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+              当前：{on ? "ON 开通段：S 导通，D 截止" : "OFF 关断段：S 断开，D 导通"}
+            </div>
+          </div>
+        </header>
+
+        <section className="grid gap-5 lg:grid-cols-[1.45fr_0.85fr]">
+          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">主电路与瞬时能量路径</h2>
+                <p className="text-sm text-slate-600">橙色点：电感/电容相关的主能流；绿色器件：当前导通；红色器件：当前关断。</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setPlaying(!playing)} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">
+                  {playing ? "暂停" : "播放"}
+                </button>
+                <button onClick={() => setPhase(duty / 2)} className="rounded-xl bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-200">看 ON</button>
+                <button onClick={() => setPhase(duty + (1 - duty) / 2)} className="rounded-xl bg-rose-100 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-200">看 OFF</button>
+              </div>
+            </div>
+
+            <svg viewBox="0 0 760 405" className="w-full rounded-2xl bg-slate-50 ring-1 ring-slate-200">
+              <defs>
+                <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#f97316" />
+                </marker>
+                <marker id="arrowSlate" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#334155" />
+                </marker>
+              </defs>
+
+              {/* base ground rail */}
+              <line x1="48" y1="330" x2="708" y2="330" stroke="#cbd5e1" strokeWidth="4" strokeLinecap="round" />
+              <Ground x={80} y={342} />
+              <text x="95" y="354" className="fill-slate-500 text-xs">0 V reference</text>
+
+              {/* source and left wiring */}
+              <Battery x={42} y={238} />
+              <line x1="60" y1="240" x2="120" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <Coil x1={120} x2={255} y={240} label="L1 输入电感" active={true} />
+              <line x1="255" y1="240" x2="337" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <circle cx="300" cy="240" r="6" fill="#334155" />
+
+              {/* switch */}
+              <MosSwitch x={300} yTop={240} yBot={330} on={on} />
+
+              {/* coupling capacitor */}
+              <line x1="337" y1="240" x2="351" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <Capacitor x={366} y={240} label="Cx 耦合/传能电容" active={true} note={on ? "此段放能" : "此段补能"} />
+              <line x1="381" y1="240" x2="455" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <circle cx="455" cy="240" r="6" fill="#334155" />
+
+              {/* diode branch */}
+              <Diode x={455} yTop={240} yBot={330} active={!on} />
+
+              {/* output side */}
+              <line x1="455" y1="240" x2="485" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <Coil x1={485} x2={605} y={240} label="L2 输出电感" active={true} />
+              <line x1="605" y1="240" x2="688" y2="240" stroke="#334155" strokeWidth="5" strokeLinecap="round" />
+              <circle cx="635" cy="240" r="6" fill="#334155" />
+              <Load x={635} yTop={240} yBot={330} />
+              <Capacitor x={688} y={286} label="Cout" active={false} note="输出纹波滤波" />
+              <line x1="688" y1="240" x2="688" y2="254" stroke="#334155" strokeWidth="5" />
+              <line x1="688" y1="318" x2="688" y2="330" stroke="#334155" strokeWidth="5" />
+              <text x="626" y="219" className="fill-blue-700 text-sm font-bold">Vout = {vout.toFixed(1)} V</text>
+              <text x="626" y="202" className="fill-blue-700 text-xs">输出对地为负极性</text>
+
+              {/* active path emphasis */}
+              <polyline points="60,240 120,240 255,240 300,240 300,330" fill="none" stroke="#f97316" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" opacity={on ? 0.28 : 0.04} />
+              <polyline points="382,240 455,240 520,240 605,240 635,240 635,330" fill="none" stroke="#06b6d4" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" opacity={on ? 0.28 : 0.04} />
+              <polyline points="60,240 120,240 255,240 337,240 382,240 455,240 455,330" fill="none" stroke="#f97316" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" opacity={!on ? 0.28 : 0.04} />
+              <polyline points="455,330 455,240 520,240 605,240 635,240 635,330" fill="none" stroke="#06b6d4" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" opacity={!on ? 0.28 : 0.04} />
+
+              <MovingDots points={paths.l1On} active={on} t={t} color="#f97316" count={8} />
+              <MovingDots points={paths.capOutOn} active={on} t={t + 0.22} color="#06b6d4" count={7} />
+              <MovingDots points={paths.l1OffCap} active={!on} t={t} color="#f97316" count={9} />
+              <MovingDots points={paths.l2Off} active={!on} t={t + 0.2} color="#06b6d4" count={7} />
+
+              {/* explanatory bubbles */}
+              <g>
+                <rect x="82" y="54" width="250" height="74" rx="18" fill={on ? "#dcfce7" : "#fff7ed"} stroke={on ? "#86efac" : "#fed7aa"} />
+                <text x="102" y="82" className="fill-slate-800 text-sm font-bold">L1：把 Vin 转成近似连续输入电流</text>
+                <text x="102" y="106" className="fill-slate-600 text-xs">{on ? "S 导通 → vL1 ≈ +Vin → iL1 上升" : "S 断开 → iL1 不能突变 → 给 Cx 补能，iL1 下降"}</text>
+              </g>
+              <g>
+                <rect x="360" y="54" width="322" height="74" rx="18" fill={on ? "#ecfeff" : "#fef2f2"} stroke={on ? "#67e8f9" : "#fecaca"} />
+                <text x="380" y="82" className="fill-slate-800 text-sm font-bold">Cx：不是普通滤波电容，而是主传能元件</text>
+                <text x="380" y="106" className="fill-slate-600 text-xs">{on ? "ON：Cx 经 L2 向输出侧放能" : "OFF：L1 经导通二极管给 Cx 充回能量"}</text>
+              </g>
+
+              <text x="40" y="386" className="fill-slate-500 text-xs">注意：这里画的是传统反相 Cuk 的能量换手逻辑；实际电流方向会受器件符号方向、取样参考和寄生参数影响。</text>
+            </svg>
+          </div>
+
+          <aside className="space-y-5">
+            <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h2 className="text-lg font-bold text-slate-900">参数控制</h2>
+              <div className="mt-4 space-y-4">
+                <label className="block">
+                  <div className="flex justify-between text-sm font-semibold text-slate-700"><span>占空比 D</span><span>{duty.toFixed(2)}</span></div>
+                  <input type="range" min="0.15" max="0.82" step="0.01" value={duty} onChange={(e) => setDuty(parseFloat(e.target.value))} className="mt-2 w-full" />
+                  <div className="mt-1 text-xs leading-5 text-amber-700">动画教学上限设为 82%，不是拓扑理论上限；D 接近 1 时 Vout 与 Cx 电压会按 1/(1−D) 急剧发散，OFF 时间过短也会让能量复位过程看不清。</div>
+                </label>
+                <label className="block">
+                  <div className="flex justify-between text-sm font-semibold text-slate-700"><span>输入 Vin</span><span>{vin.toFixed(0)} V</span></div>
+                  <input type="range" min="5" max="48" step="1" value={vin} onChange={(e) => setVin(parseFloat(e.target.value))} className="mt-2 w-full" />
+                </label>
+                <label className="block">
+                  <div className="flex justify-between text-sm font-semibold text-slate-700"><span>播放速度</span><span>{speed.toFixed(2)} 周期/s</span></div>
+                  <input type="range" min="0.12" max="1.2" step="0.02" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="mt-2 w-full" />
+                </label>
+                <label className="block">
+                  <div className="flex justify-between text-sm font-semibold text-slate-700"><span>手动拖动一个周期</span><span>{phase.toFixed(2)}T</span></div>
+                  <input type="range" min="0" max="0.999" step="0.001" value={phase} onChange={(e) => setPhase(parseFloat(e.target.value))} className="mt-2 w-full" />
+                </label>
+              </div>
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-700 ring-1 ring-slate-200">
+                <div><b>理想 CCM 传输比：</b> Vout = −D/(1−D) · Vin</div>
+                <div><b>当前估算：</b> Vout ≈ {vout.toFixed(2)} V</div>
+                <div><b>Cx 平均电压量级：</b> Vc ≈ Vin/(1−D) ≈ {vc.toFixed(2)} V</div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <h2 className="text-lg font-bold text-slate-900">当前状态判读</h2>
+              <div className="mt-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <div className="text-sm font-bold text-slate-800">{on ? "ON：S 导通，D 截止" : "OFF：S 断开，D 导通"}</div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600">
+                  {on ? (
+                    <>
+                      <li>L1 直接承受 Vin，iL1 斜坡上升：输入侧正在储能。</li>
+                      <li>Cx 通过 L2 向负载侧放能，iL2 通常上升。</li>
+                      <li>输出电压极性反相：右端输出节点相对地为负。</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>L1 电流不能突变，迫使二极管导通，把能量补进 Cx。</li>
+                      <li>L2 维持负载电流，iL2 斜坡下降但不应掉到零。</li>
+                      <li>Cout 负责压住输出纹波，不承担主要跨级传能。</li>
+                    </>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-4">
+          <ConversionStep n="1" title="电压源 → 输入电流源" active={true} body="L1 让 Vin 不再直接冲击后级，而是变成近似连续的 iL1。电感公式 v=L·di/dt 决定了电流只能斜坡变化。" />
+          <ConversionStep n="2" title="输入电流 → Cx 电荷" active={!on} body="OFF 段，L1 的连续电流通过导通二极管给 Cx 补能。这里发生的是电感能量到电容电荷/电压的换手。" />
+          <ConversionStep n="3" title="Cx 电压 → 输出电感电流" active={on} body="ON 段，Cx 不是静态隔直件，而是把已存能量推给 L2/负载，因此输出侧也获得连续电流。" />
+          <ConversionStep n="4" title="输出电流 → 稳定负电压" active={true} body="L2 和 Cout 把脉动能流低通化，最终在负载上形成相对输入地反相的 DC 输出。" />
+        </section>
+
+        <PWMPanel phase={phase} duty={duty} vin={vin} vout={vout} on={on} />
+
+        <section className="grid gap-5 lg:grid-cols-[1fr_1fr]">
+          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-lg font-bold text-slate-900">关键波形</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Waveform title="iL1 输入电感电流" phase={phase} duty={duty} value={`相对值 ${iL1.toFixed(2)}，CCM 不为 0`} kind="il1" />
+              <Waveform title="iL2 输出电感电流" phase={phase} duty={duty} value={`相对值 ${iL2.toFixed(2)}，CCM 不为 0`} kind="il2" />
+              <Waveform title="vCx 耦合电容电压" phase={phase} duty={duty} value={`平均约 ${vc.toFixed(1)} V`} kind="vc" />
+              <Waveform title="vout 输出电压" phase={phase} duty={duty} value={`平均约 ${vout.toFixed(1)} V`} kind="vo" />
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-lg font-bold text-slate-900">容易误解的点</h2>
+            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><b>误解 1：</b>“Cuk 就是 Buck-Boost 多加一个电容。”不够准确。Cuk 的核心是用 Cx 作跨级能量传递，同时用 L1/L2 让输入输出电流连续。</div>
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><b>误解 2：</b>“输出电容在开关断开时单独供电。”应改为：L2 保证输出电流连续，Cout 主要抑制电压纹波。</div>
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><b>误解 3：</b>“Cx 越大越好。”实际要同时检查 RMS 电流、ESR 损耗、瞬态响应、启动浪涌和环路稳定性。</div>
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><b>工程提醒：</b>非隔离反相 Cuk 的开关/二极管/电容电流应力不低，布局上必须优先处理高 di/dt 回路和 Cx 的纹波电流路径。</div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

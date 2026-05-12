@@ -13,6 +13,7 @@
 - 暂停、重开、游戏结束状态
 - 响应式布局，兼容桌面和手机
 - GitHub Actions Pages 部署配置
+- 新增 Cuk Converter Animation 静态页面：`cuk-converter-animation/`
 
 ## 本地运行
 
@@ -30,4 +31,10 @@ Settings → Pages → Build and deployment → Source: GitHub Actions
 
 ```text
 https://zhengzhou2817.github.io/enhance/
+```
+
+Cuk Converter Animation 页面地址：
+
+```text
+https://zhengzhou2817.github.io/enhance/cuk-converter-animation/
 ```
